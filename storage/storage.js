@@ -31,4 +31,26 @@ const stor = {
     ],
 }
 
-module.exports = stor
+const Books = require('../models/books')
+
+function preloadBook(book){
+    console.log(book)
+
+    const {title, description, authors, favorite, fileCover, fileName, fileBook} = book
+    const newBook = new Books({title, description, authors, favorite, fileCover, fileName, fileBook})
+    
+    try {
+        newBook.save()
+    } catch (e) {
+
+    }  
+}
+
+function preload(){
+    const {books} = stor;
+    books.forEach((book) => {
+        preloadBook(book)
+    }); 
+}
+
+module.exports = preload

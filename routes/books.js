@@ -5,19 +5,22 @@ module.exports = router
 const fs = require('fs');
 const path = require('path');
 
-const stor = require('../storage/storage')
-const cBook = require('../classes/cBook')
+const Books = require('../models/books')
+//const stor = require('../storage/storage')
+// const cBook = require('../classes/cBook')
 
 // 1. получить все книги
-router.get('/books', (req, res) => {
+router.get('/books', async (req, res) => {
 
-    // получаем массив всех книг
-    const {books} = stor
-
-    res.render("books/index", {
-        title: "Список книг",
-        books: books,
-    });    
+    try {
+        const books = await Books.find().select('-__v')
+        res.render("books/index", {
+            title: "Список книг",
+            books: books,
+        });  
+    } catch (e) {
+        res.status(500).json(e)
+    }  
 }) 
 
 // 2. создать книгу
@@ -28,123 +31,109 @@ router.get('/books/create', (req, res) => {
     })
 })
 
-router.post('/books/create', (req, res) => {
+router.post('/books/create', async (req, res) => {
     // создаём книгу и возвращаем её же вместе с присвоенным ID
     const {title, description, authors, favorite, fileCover, fileName, fileBook} = req.body
-    const newBook = new cBook(title, description, authors, favorite, fileCover, fileName, fileBook)
+    const newBook = new Books({title, description, authors, favorite, fileCover, fileName, fileBook})
 
-    const {books} = stor
-    books.push(newBook)
-    
-    res.redirect('/books')
+    try {
+        await newBook.save()
+        res.redirect('/books')
+    } catch (e) {
+        res.status(500).json(e)
+    }     
 })
 
 // 3. получить книгу по ID
-router.get('/books/:id', (req, res) => {
+router.get('/books/:id', async (req, res) => {
 
     // получаем объект книги, если запись не найдена, вернём Code: 404
-    const {books} = stor
     const {id} = req.params
-    const idx = books.findIndex( el => el.id === id)
+    console.log(id)
 
-    if (idx === -1)
+    try {
+        //const books = await Books.find().select('-__v')
+        //console.log(books)
+
+        const book = await Books.findById(id).select('-__v')
+        console.log(`book - ${book}`)
+
+        res.render("books/view", {
+            title: "Просмотреть карточку книги",
+            book: book
+        })        
+    } catch (e) {
         res.redirect('/404')
-        
-    res.render("books/view", {
-        title: "Просмотреть карточку книги",
-        book: books[idx]
-    })
+    }  
 })
 
 // 4. редактировать книгу по ID
-router.get('/books/update/:id', (req, res) => {
+router.get('/books/update/:id', async (req, res) => {
     // редактируем объект книги, если запись не найдена, вернём Code: 404
-    const {books} = stor
     const {id} = req.params
-    const idx = books.findIndex( el => el.id === id)
 
-    if (idx === -1)
-        res.redirect('/404');
-
-    res.render("books/update", {
-        title: "Редактирование атрибутов книги",
-        book: books[idx],
-    })
+    try {
+        const book = await Books.findById(id).select('-__v')
+        res.render("books/update", {
+            title: "Редактирование атрибутов книги",
+            book: book,
+        })        
+    } catch (e) {
+        res.redirect('/404')
+    } 
 })
 
-router.post('/books/update/:id', (req, res) => {
+router.post('/books/update/:id', async (req, res) => {
     // редактируем объект книги, если запись не найдена, вернём Code: 404
-    const {books} = stor
     const {id} = req.params
-    const idx = books.findIndex( el => el.id === id)
-
-    if (idx === -1)
-        res.redirect('/404')
-
     const {title, description, authors, favorite, fileCover, fileName, fileBook} = req.body
 
-    books[idx] = {
-        ...books[idx],
-        title,
-        description,
-        authors,
-        favorite,
-        fileCover,
-        fileName,
-        fileBook
-    }
-    // books[idx].title       = title
-    // books[idx].description = description
-    // books[idx].authors     = authors
-    // books[idx].favorite    = favorite
-    // books[idx].fileCover   = fileCover
-    // books[idx].fileName    = fileName
-    // books[idx].fileBook    = fileBook
-
-    res.redirect(`/books/${id}`);
+    try {
+        await Books.findByIdAndUpdate(id, {title, description, authors, favorite, fileCover, fileName, fileBook})
+        res.redirect(`/books/${id}`);
+    } catch (e) {
+        res.redirect('/404')
+    } 
 })
 
 // 5. удалить книгу по ID
-router.post('/books/delete/:id', (req, res) => {
+router.post('/books/delete/:id', async (req, res) => {
     // удаляем книгу и возвращаем ответ: 'ok'
-    const {books} = stor
     const {id} = req.params
-    const idx = books.findIndex( el => el.id === id)
 
-    if (idx === -1)
+    try {
+        await Books.deleteOne({_id: id})
+        res.redirect(`/books`); 
+    } catch (e) {
         res.redirect('/404');
-
-    books.splice(idx, 1)
-    res.redirect(`/books`);    
+    }      
 })   
 
 // 6. Скачать книгу
-router.get('/books/:id/download', (req, res) => {
+router.get('/books/:id/download', async(req, res) => {
 
-    const {books} = stor
     const {id} = req.params
-    
-    // Ищем книгу в хранилище по названию, которое передали через параметры
-    // В хранилище книга должна иметь сответствующее название fileName
-    const idx = books.findIndex( el => el.id === id)    
-    
-    if (idx === -1)
-        return res.redirect('/404');
-        // return res.status(404).send('Книга не найдена')
-    
-    // Формируем путь до книги
-    const filePath = path.resolve(__dirname, "..", books[idx].fileBook)
 
-    // Проверка, существует ли файл
-    fs.access(filePath, fs.constants.F_OK, (err) => {
-        if (err) 
-            return res.redirect('/404');
-            // return res.status(404).send('Файл не найден')
+    try {
+        const book = await Books.findById(id).select('-__v')
 
-        // Отправка файла на скачивание
-        res.download(filePath, err => {
-            if (err)
-                res.status(500).send('Ошибка при скачивании файла')
+        // Формируем путь до книги
+        const filePath = path.resolve(__dirname, "..", book.fileBook)
+
+        // Проверка, существует ли файл
+        fs.access(filePath, fs.constants.F_OK, (err) => {
+            if (err) {
+                res.redirect('/404')
+                return 
+            }
+
+            // Отправка файла на скачивание
+            res.download(filePath, err => {
+                if (err)
+                    res.status(500).send('Ошибка при скачивании файла')
+            })
         })
-    })
+    } catch (e) {
+        res.redirect('/404')
+    }
 })
